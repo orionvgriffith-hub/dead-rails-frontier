@@ -41,17 +41,21 @@ export function checkServer(force) {
   const p = base ? api('/api/health').then(j => j && j.game === 'dead-rails-frontier').catch(() => false) : Promise.resolve(false);
   probe = { base, p }; return p;
 }
-// the Colyseus browser client, loaded from the server itself
+// the Colyseus browser client, loaded from the server itself, or from a public CDN when the server can't send it
+const CLIENT_CDN = 'https://cdn.jsdelivr.net/npm/colyseus.js@0.15/dist/colyseus.js';
 function loadClient() {
   const base = serverAddress();
   if (client && clientBase === base) return Promise.resolve(client);
   return new Promise((res, rej) => {
     const make = () => { client = new window.Colyseus.Client(base.replace(/^http/, 'ws')); clientBase = base; res(client); };
     if (window.Colyseus) return make();
-    const s = document.createElement('script'); s.src = base + '/colyseus.js'; s.async = true;
-    s.onload = () => (window.Colyseus ? make() : rej(new Error('The server sent a broken client')));
-    s.onerror = () => rej(new Error('Could not reach the game server'));
-    document.head.appendChild(s);
+    const load = (src, next) => {
+      const s = document.createElement('script'); s.src = src; s.async = true;
+      s.onload = () => (window.Colyseus ? make() : next());
+      s.onerror = next;
+      document.head.appendChild(s);
+    };
+    load(base + '/colyseus.js', () => load(CLIENT_CDN, () => rej(new Error('Could not load the multiplayer client'))));
   });
 }
 

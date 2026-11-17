@@ -2,12 +2,13 @@
 // creating a server, and (in game, from the pause menu) the session panel with the code and the owner's tools.
 // Joining goes through online.js; the game itself starts through hooks.play(room).
 import * as Online from './game/online.js';
+import * as Posse from './game/posse.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const PENDING = 'drw.pendingJoin';
 const DIFF_NAME = { easy: 'Easy', normal: 'Normal', hard: 'Hard' };
-let H = null, panel = null, view = null, list = [], busy = false, serverUp = false;
+let H = null, panel = null, view = null, list = [], busy = false, serverUp = false, hand = null; // hand: a code swap by hand in progress
 
 export function initMultiplayer(hooks) {
   H = hooks;
@@ -17,7 +18,7 @@ export function initMultiplayer(hooks) {
   panel.addEventListener('click', onClick);
   panel.addEventListener('input', e => { if (e.target.closest('[data-f]') && view === 'public') renderList(); });
   panel.addEventListener('change', e => { if (e.target.closest('[data-f]') && view === 'public') renderList(); });
-  panel.addEventListener('keydown', e => { if (e.code === 'Enter' && e.target.id === 'mpCode') panel.querySelector('[data-a="joinCode"]').click(); });
+  panel.addEventListener('keydown', e => { if (e.code === 'Enter' && (e.target.id === 'mpCode' || e.target.id === 'mpRoom')) panel.querySelector(e.target.id === 'mpRoom' ? '[data-a="posseJoin"]' : '[data-a="joinCode"]').click(); });
   addEventListener('keydown', e => { if (panelOpen() && e.code === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); close(); } }, true);
   document.querySelector('#intro .mpmenu').addEventListener('click', e => {
     const b = e.target.closest('[data-mp]'); if (!b) return; H.click();
@@ -34,11 +35,11 @@ async function status(force) {
   const el = $('mpStatus'); el.className = 'mpstatus'; el.textContent = 'Looking for the game server…';
   serverUp = await Online.checkServer(force);
   const addr = Online.serverAddress();
-  document.querySelectorAll('#intro [data-mp]').forEach(b => { if (b.dataset.mp !== 'friends') b.disabled = !serverUp; });
+  document.querySelectorAll('#intro [data-mp]').forEach(b => { if (b.dataset.mp !== 'friends' && b.dataset.mp !== 'posse') b.disabled = !serverUp; });
   const last = Online.lastSession(), rj = document.querySelector('#intro [data-mp="rejoin"]');
   rj.hidden = !(serverUp && last); if (last) rj.textContent = `Rejoin ${last.name || 'last server'}`;
   if (serverUp) { el.classList.add('up'); el.innerHTML = `Online · <b>${esc(addr.replace(/^https?:\/\//, ''))}</b> <a href="#" data-mpaddr>change</a>`; }
-  else { el.classList.add('down'); el.innerHTML = `Online play needs the game server${addr ? ` (none at <b>${esc(addr.replace(/^https?:\/\//, ''))}</b>)` : ''}. Playing here still works on your own or with other tabs. <a href="#" data-mpaddr>Server address…</a>`; }
+  else { el.classList.add('down'); el.innerHTML = `Server play needs the game server${addr ? ` (none at <b>${esc(addr.replace(/^https?:\/\//, ''))}</b>)` : ''}. <b>Ride as a posse</b> works without one. <a href="#" data-mpaddr>Server address…</a>`; }
   el.querySelector('[data-mpaddr]').onclick = e => { e.preventDefault(); H.click(); open('address'); };
 }
 
@@ -94,14 +95,30 @@ function render() {
     setTimeout(() => { const i = $('mpCode'); if (i) i.focus(); }, 30);
   } else if (view === 'friends') {
     B.innerHTML = head('Riding together', '<em>Friends</em>') + `
-      <p class="mpnote">Friend lists and parties (invite, ready up, travel together) aren't built yet; they're the next stage. Until then, a <b>Friends session</b> does the job: create one, send your friends its code, and they join with it.</p>
-      <div class="mrow"><button class="mbtn primary" data-a="view" data-v="createFriends" ${serverUp ? '' : 'disabled'}>Create friends session</button><button class="mbtn" data-a="view" data-v="code" ${serverUp ? '' : 'disabled'}>Join with code</button></div>`;
+      <p class="mpnote">Friend lists and parties aren't built yet. To play with friends now, <b>Ride as a posse</b>: one of you hosts and the others type in a room code, with no server needed. On the game server, a <b>Friends session</b> works the same way with its code.</p>
+      <div class="mrow"><button class="mbtn primary" data-a="view" data-v="posse">Ride as a posse</button><button class="mbtn" data-a="view" data-v="createFriends" ${serverUp ? '' : 'disabled'}>Create friends session</button><button class="mbtn" data-a="view" data-v="code" ${serverUp ? '' : 'disabled'}>Join with code</button></div>`;
   } else if (view === 'address') {
     B.innerHTML = head('Connection', 'Game <em>server</em>') + `
       <p class="mpnote">The server normally serves the game itself, so this is found automatically. If you opened the game from somewhere else, enter the server's address.</p>
       ${field('Server address', `<input id="mpAddr" autocomplete="off" spellcheck="false" placeholder="https://your-server.example.com" value="${esc(Online.serverAddress())}">`)}
       <p class="mperr" hidden></p>
       <div class="mrow"><button class="mbtn primary" data-a="saveAddr">Save and check</button></div>`;
+  } else if (view === 'posse') {
+    B.innerHTML = head(`Play with friends · version ${Posse.POSSE_VERSION}, you all need the same one`, 'Ride as a <em>posse</em>') + `
+      <p class="mpnote">Play with up to ${Posse.MAX_RIDERS - 1} friends online, each on your own computer. No accounts and no server: one of you hosts, the others type in the room code. You all ride in the host's world.</p>
+      <div class="mrow"><button class="mbtn primary" data-a="posseHost">Host a room</button></div>
+      ${field('Room code', '<input id="mpRoom" class="mpcode" maxlength="6" autocomplete="off" spellcheck="false" placeholder="ABCDE">')}
+      <div class="mrow"><button class="mbtn" data-a="posseJoin">Join a room</button></div>
+      <p class="mperr" hidden></p>
+      <p class="mpnote">Room not working? Swap codes by hand: <a href="#" data-a="handHost">host</a> · <a href="#" data-a="handJoin">join</a></p>`;
+    setTimeout(() => { const i = $('mpRoom'); if (i) i.focus(); }, 30);
+  } else if (view === 'handJoin') {
+    B.innerHTML = head('Swap codes by hand', 'Join a <em>posse</em>') + `
+      <p class="mpnote"><b>1 ·</b> Paste the code your friend (the host) sent you.</p>
+      <textarea id="mpHandIn" class="mphand" spellcheck="false" placeholder="DR1…"></textarea>
+      <div class="mrow"><button class="mbtn primary" data-a="handAnswer">Make my reply</button></div>
+      <div id="mpHandOut" hidden><p class="mpnote"><b>2 ·</b> Your reply is copied. Send it back to the host: you ride in as soon as they paste it.</p><textarea class="mphand" readonly></textarea><div class="mrow"><button class="mbtn small" data-a="copyHand">Copy again</button></div></div>
+      <p class="mperr" hidden></p>`;
   } else if (view === 'session') renderSession();
 }
 function visNote() {
@@ -128,6 +145,7 @@ function renderList() {
 
 // in game: this server, its code, and the owner's tools
 function renderSession() {
+  if (H.posse()) return renderPosse();
   const net = H.online(), B = body();
   if (!net) { B.innerHTML = head('Server', 'Not <em>online</em>') + '<p class="mpnote">You are playing on your own (or with other tabs in this browser).</p>'; return; }
   const I = net.info || {}, owner = !!I.owner;
@@ -142,6 +160,76 @@ function renderSession() {
 }
 export function refreshSession() { if (view === 'session') renderSession(); }
 
+// ---------- riding as a posse (posse.js): no server, the host's browser keeps the world ----------
+function renderPosse() {
+  const net = H.posse(), L = net.link, host = L.role === 'host', B = body();
+  const riders = [[net.id, net.name]].concat([...net.peers.values()].map(p => [p.id, p.name]));
+  B.innerHTML = head(`Ride as a posse · version ${Posse.POSSE_VERSION}`, host ? 'Your <em>posse</em>' : 'Riding in a <em>posse</em>') + `
+    ${L.code ? `<div class="mpcodebox"><span>Room code</span><b>${esc(L.code)}</b><button class="mbtn small" data-a="copyRoom">Copy</button></div>` : host ? '<p class="mpnote">No room code: the room service couldn\'t be reached. Invite friends by hand below.</p>' : ''}
+    <div class="mpinfo"><span>${riders.length}/${Posse.MAX_RIDERS} riders</span>${host ? '<span>You host: the world is yours</span>' : ''}</div>
+    <div class="mplist small">${riders.map(([id, nm]) => `<div class="mprow"><div class="mpn">${esc(nm)}${id === net.id ? ' <small>you</small>' : ''}${id === net.hostId ? ' <small>host</small>' : ''}</div></div>`).join('')}</div>
+    ${host ? `<div class="mrow"><button class="mbtn small" data-a="handInvite">Invite by hand</button></div>
+      <div id="mpInvite" hidden>
+        <p class="mpnote"><b>1 ·</b> Your code is copied. Send it to your friend. They choose <i>Ride as a posse</i>, then <i>swap codes by hand: join</i>.</p>
+        <textarea class="mphand" id="mpOffer" readonly></textarea><div class="mrow"><button class="mbtn small" data-a="copyOffer">Copy again</button></div>
+        <p class="mpnote"><b>2 ·</b> Paste the reply code they send back.</p>
+        <textarea class="mphand" id="mpReply" spellcheck="false" placeholder="DR1…"></textarea>
+        <div class="mrow"><button class="mbtn primary" data-a="handAccept">Let them in</button></div>
+      </div>` : ''}
+    <p class="mperr" hidden></p>
+    <div class="mrow"><button class="mbtn" data-a="posseLeave">${host ? 'End the posse' : 'Leave the posse'}</button></div>`;
+}
+async function copy(text, btn) { try { await navigator.clipboard.writeText(text); if (btn) btn.textContent = 'Copied'; } catch (e) { if (btn) btn.textContent = 'Select it and press ⌘C'; } }
+// host or join with a room code, or host by hand. Already riding on your own? The page reloads first
+async function posseGo(o) {
+  if (busy) return;
+  if (H.started()) { try { sessionStorage.setItem(PENDING, JSON.stringify(o)); } catch (e) {} H.saveAndReload(); return; }
+  if (o.posse === 'hand-join') { open('handJoin'); return; }
+  busy = true; err(''); setBusy(true);
+  const link = new Posse.PosseLink(o.posse === 'join' ? 'join' : 'host');
+  try {
+    if (o.posse === 'host') await Posse.hostRoom(link);
+    else if (o.posse === 'join') await Posse.joinRoom(link, o.code);
+    close(); await H.playPosse(link);
+    if (o.posse === 'host') H.toast(`Room code ${link.code}: send it to your friends. Esc → Players & invites shows it again`);
+    if (o.posse === 'hand-host') { open('session'); handInvite(); }
+  } catch (e) {
+    link.close();
+    if (!panelOpen()) open('posse'); else if (view !== 'posse') { view = 'posse'; render(); }
+    setTimeout(() => err(e.message || 'Could not start the posse'), 60);
+  }
+  busy = false; setBusy(false);
+}
+// a rider swapping codes by hand: the host's code in, a reply out, then in once the host pastes it
+async function handJoin() {
+  const v = ($('mpHandIn').value || '').trim(); if (!v) return err('Paste the code your friend sent first');
+  if (hand) hand.cancel();
+  err(''); setBusy(true);
+  const link = new Posse.PosseLink('join');
+  try {
+    hand = await Posse.handAnswer(link, v);
+    const out = $('mpHandOut'); out.hidden = false; out.querySelector('textarea').value = hand.code; copy(hand.code);
+    setBusy(false);
+    await hand.connected; hand = null;
+    close(); await H.playPosse(link);
+  } catch (e) { setBusy(false); link.close(); hand = null; if (panelOpen()) err(e.message); }
+}
+// the host's side: a code for one friend, then their reply
+async function handInvite() {
+  const net = H.posse(), box = $('mpInvite'); if (!net || !box) return;
+  if (hand) hand.cancel();
+  box.hidden = false; $('mpOffer').value = 'Making your code…'; err('');
+  try { hand = await Posse.handOffer(net.link); $('mpOffer').value = hand.code; copy(hand.code); }
+  catch (e) { err(e.message); }
+}
+async function handAccept() {
+  if (!hand || !hand.accept) return err('Press Invite by hand first');
+  const r = ($('mpReply').value || '').trim(); if (!r) return err('Paste the reply code your friend sent');
+  err(''); setBusy(true);
+  try { await hand.accept(r); hand = null; setBusy(false); H.toast('A rider joined the posse'); setTimeout(renderPosse, 1500); }
+  catch (e) { setBusy(false); err(e.message); }
+}
+
 async function onClick(e) {
   if (e.target === panel) return close();
   const sb = e.target.closest('[data-seg] button');
@@ -151,7 +239,7 @@ async function onClick(e) {
     if (sb.parentNode.dataset.seg === 'svis') H.online() && H.online().own({ op: 'visibility', v: sb.dataset.v });
     return;
   }
-  const b = e.target.closest('[data-a]'); if (!b || b.disabled) return; H.click();
+  const b = e.target.closest('[data-a]'); if (!b || b.disabled) return; H.click(); if (b.tagName === 'A') e.preventDefault();
   const a = b.dataset.a, net = H.online && H.online();
   if (a === 'close') close();
   else if (a === 'view') { view = b.dataset.v; render(); }
@@ -166,6 +254,17 @@ async function onClick(e) {
   else if (a === 'lock') net.own({ op: 'lock', on: !net.info.locked });
   else if (a === 'kick') { net.own({ op: 'kick', id: b.dataset.id }); setTimeout(renderSession, 400); }
   else if (a === 'leave') { net.leave(); location.reload(); }
+  else if (a === 'posseHost') posseGo({ posse: 'host' });
+  else if (a === 'posseJoin') { const c = Posse.cleanRoom($('mpRoom').value); if (c.length !== 5) return err('Room codes are five letters and numbers'); posseGo({ posse: 'join', code: c }); }
+  else if (a === 'handHost') posseGo({ posse: 'hand-host' });
+  else if (a === 'handJoin') posseGo({ posse: 'hand-join' });
+  else if (a === 'handAnswer') handJoin();
+  else if (a === 'copyHand') copy(panel.querySelector('#mpHandOut textarea').value, b);
+  else if (a === 'copyOffer') copy($('mpOffer').value, b);
+  else if (a === 'copyRoom') copy(H.posse().link.code, b);
+  else if (a === 'handInvite') handInvite();
+  else if (a === 'handAccept') handAccept();
+  else if (a === 'posseLeave') { const n = H.posse(); if (n) { n.leave(); n.link.close(); } location.reload(); }
 }
 
 // join, then start the game in that session. Already riding? The page reloads and joins straight after
@@ -186,6 +285,7 @@ function setBusy(on) { document.querySelectorAll('#intro .mpmenu button, #mpPane
 // after a reload for a join
 export function resumePending() {
   let o = null; try { o = JSON.parse(sessionStorage.getItem(PENDING) || 'null'); sessionStorage.removeItem(PENDING); } catch (e) {}
+  if (o && o.posse) return posseGo(o);
   if (o) Online.checkServer().then(up => { if (up) go(o); });
 }
 // the connection is gone for good

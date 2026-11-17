@@ -405,8 +405,8 @@ export function createGame(ctx) {
       onT = { b, x: l.x, y: l.y, z: l.z, yaw: player.yaw - t.heading };
     }
     if (horses) horses.save();
-    // where you stand in a server's world means nothing on your own: keep your own game's spot
-    if (net && net.online) { try { const old = JSON.parse(localStorage.getItem(pkey()) || 'null'); pos = old && old.pos || null; onT = old && old.onT || null; } catch (e) {} }
+    // where you stand in a server's (or a friend's) world means nothing on your own: keep your own game's spot
+    if (net && (net.online || net.guest)) { try { const old = JSON.parse(localStorage.getItem(pkey()) || 'null'); pos = old && old.pos || null; onT = old && old.onT || null; } catch (e) {} }
     try { localStorage.setItem(pkey(), JSON.stringify({ v: 1, inv: P.inv.toJSON().items, hot: P.hot, cash: P.cash, hp: P.hp, hunger: P.hunger, stamina: P.stamina, warmth: P.warmth, dead: P.dead, limbo: P.limbo, mag: P.mag, kit2: 1, pos, onT })); } catch (e) {}
   }
   function loadPlayer() {
@@ -423,7 +423,7 @@ export function createGame(ctx) {
     if (!s.kit2) { for (const [t, n] of SIDEARM) P.inv.addMerge({ id: newId('i'), t, n, x: 0, y: 0, r: 0 }); setTimeout(() => ui.notify('The dead are walking. You found an old revolver and a knife in your saddlebag', 'epic'), 1500); }
     if (s.dead || P.hp <= 0) { P.hp = 100; P.hunger = Math.max(P.hunger, 60); P.warmth = 100; }
     // on a server everyone starts together on the Dry Gulch platform; on your own you pick up where you left off
-    const online = !!(net && net.online);
+    const online = !!(net && (net.online || net.guest)); // on a server, or riding in a friend's posse
     if (s.pos && !online) ctx.placeAt(s.pos.x, s.pos.z, s.pos.yaw);
     pendingBoard = online ? null : s.onT || null;
     ui.notify('Welcome back, ' + name);

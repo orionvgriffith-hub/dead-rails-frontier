@@ -439,6 +439,8 @@
   .mpcodebox { display: flex; align-items: center; gap: 12px; padding: 10px 12px; margin-bottom: 14px; background: rgba(0,0,0,.25); border: 1.5px dashed var(--brassA); }
   .mpcodebox span { font: 700 10px var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--brassA); }
   .mpcodebox b { font: 700 26px var(--mono); letter-spacing: .3em; color: var(--cream); flex: 1; }
+  .mphand { width: 100%; height: 76px; resize: vertical; font: 11px/1.35 var(--mono); padding: 8px 10px; margin: 0 0 10px; background: rgba(0,0,0,.28); color: var(--cream); border: 1.5px solid rgba(232,200,130,.45); word-break: break-all; }
+  .mpnote a { color: var(--brassA); }
   @media (max-width: 640px) { .mpmenu { grid-template-columns: 1fr 1fr; } .mprow { grid-template-columns: 1fr auto; } .mprow > div:not(.mpn):not(:last-child) { display: none; } }
 </style>
 </head>
@@ -516,6 +518,7 @@
     <label class="namefield"><span data-i18n="m_name">Your name</span> <input id="riderName" maxlength="18" autocomplete="off" spellcheck="false"></label>
     <div class="mpmenu">
       <button id="start" disabled data-i18n="m_start">Play</button>
+      <button data-mp="posse" class="mpb hot">Ride as a posse · play with friends</button>
       <button data-mp="rejoin" class="mpb hot" hidden>Rejoin</button>
       <button data-mp="quick" class="mpb" disabled>Quick join</button>
       <button data-mp="public" class="mpb" disabled>Public servers</button>

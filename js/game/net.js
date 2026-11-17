@@ -2,7 +2,8 @@
 // train storage, ground items, death bags, train fuel and seat) goes through request() and is applied only by the
 // host tab, through the same authority the online server runs (authority.js). The train itself is simulated by
 // whoever is driving (or the host when nobody is) and streamed to everyone else. Player inventories stay with their
-// owner. Online play swaps this for OnlineNet (online.js), which has the same shape.
+// owner. A posse (posse.js) carries the same messages between computers instead of tabs; online play through the
+// server swaps this for OnlineNet (online.js), which has the same shape.
 import { Grid, newId } from './grid.js';
 import { World } from './authority.js';
 
@@ -11,6 +12,8 @@ const WORLD_KEY = 'drw.world.v1';
 export class Net {
   constructor(opts) {
     this.o = opts; this.name = opts.name; this.online = false;
+    // a posse (posse.js) replaces the link between tabs; a rider in someone else's world is their guest
+    this.link = opts.link || null; this.role = opts.role || null; this.guest = this.role === 'join';
     this.id = newId('n'); this.joined = Date.now() + Math.random();
     this.isHost = false; this.hostId = null;
     this.world = new World({
@@ -24,16 +27,26 @@ export class Net {
       },
     });
     this.peers = new Map(); this.pending = new Map(); this.rid = 0;
-    this.bc = ('BroadcastChannel' in window) ? new BroadcastChannel('dead-rails-world') : null;
+    this.bc = !this.link && ('BroadcastChannel' in window) ? new BroadcastChannel('dead-rails-world') : null;
+    if (this.link) this.link.listen(m => this.onMsg(m));
     if (this.bc) this.bc.onmessage = e => this.onMsg(e.data);
     this.saveT = null;
   }
   get state() { return this.world.state; }
   set state(s) { this.world.state = s; }
-  send(m) { if (this.bc) this.bc.postMessage(m); }
+  send(m) { if (this.link) this.link.send(m); else if (this.bc) this.bc.postMessage(m); }
 
   // ---------- startup + host election ----------
+  // a posse has its host fixed: they made the room. A rider waits to hear from them, and never takes over
   start() {
+    if (this.role === 'host') { this.becomeHost(); setInterval(() => this.tick(), 1000); return Promise.resolve(); }
+    if (this.role === 'join') {
+      return new Promise(res => {
+        this.send({ k: 'hello', id: this.id, name: this.name, joined: this.joined });
+        const t0 = Date.now(), wait = setInterval(() => { if (this.hostId || Date.now() - t0 > 8000) { clearInterval(wait); res(); } }, 100);
+        setInterval(() => this.tick(), 1000);
+      });
+    }
     return new Promise(res => {
       if (!this.bc) { this.becomeHost(); return res(); }
       this.send({ k: 'hello', id: this.id, name: this.name, joined: this.joined });
@@ -60,7 +73,7 @@ export class Net {
     const now = Date.now();
     this.send({ k: 'here', id: this.id, name: this.name, joined: this.joined, host: this.isHost });
     for (const [id, p] of this.peers) if (now - p.last > 5000) { this.peers.delete(id); this.o.onPeerLeave && this.o.onPeerLeave(id); if (id === this.hostId) this.hostId = null; if (this.isHost && this.state.train.driver === id) this.world.setTrain({ driver: null }); }
-    if (!this.hostId) {
+    if (!this.hostId && !this.role) {
       const earliest = [...this.peers.values()].concat([{ id: this.id, joined: this.joined }]).sort((a, b) => a.joined - b.joined)[0];
       if (earliest.id === this.id) this.becomeHost();
     }
@@ -72,6 +85,7 @@ export class Net {
       if (!peer) { this.peers.set(m.id, { id: m.id, name: m.name, joined: m.joined, last: Date.now() }); this.o.onPeerJoin && this.o.onPeerJoin(m.id, m.name); }
       else { peer.last = Date.now(); peer.name = m.name; }
       if (m.k === 'here' && m.host) {
+        if (this.role === 'host') return; // the posse's host stays the host
         if (this.isHost && m.id !== this.id) {
           // two hosts (e.g. after a split): the earlier one keeps the world
           if (m.joined < this.joined) { this.isHost = false; this.hostId = m.id; this.o.onHostChange && this.o.onHostChange(false); }

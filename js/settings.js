@@ -101,7 +101,7 @@ export function initMenus(h) {
   pauseEl.innerHTML = `<div class="wood plank">
     <div class="rivets"></div><div class="eyebrow" data-i18n="paused"></div><h2>Dead Rails <em>Desert</em></h2>
     <p class="pstate"></p>
-    <div class="pbtns">${['resume', 'restart', 'settings', 'controls', 'mainMenu', 'quit'].map(k => `<button class="mbtn${k === 'resume' ? ' primary' : ''}" data-p="${k}" data-i18n="${k}"></button>`).join('')}<button class="mbtn" data-p="server" hidden>Server &amp; invites</button></div></div>`;
+    <div class="pbtns">${['resume', 'restart', 'settings', 'controls', 'mainMenu', 'quit'].map(k => `<button class="mbtn${k === 'resume' ? ' primary' : ''}" data-p="${k}" data-i18n="${k}"></button>`).join('')}<button class="mbtn" data-p="server" hidden>Players &amp; invites</button></div></div>`;
   pauseEl.addEventListener('click', e => {
     const b = e.target.closest('[data-p]'); if (!b) return; hooks.click();
     const k = b.dataset.p;

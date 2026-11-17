@@ -21,6 +21,7 @@ import * as In from './input.js';
 import * as Menus from './settings.js';
 import * as MP from './mpmenu.js';
 import { OnlineNet } from './game/online.js';
+import { Net } from './game/net.js';
 import { S, resolutionRatio } from './settings.js';
 import { t } from './i18n.js';
 import { createPost } from './post.js';
@@ -109,7 +110,8 @@ async function init() {
   try { $('riderName').value = localStorage.getItem('drw.name') || 'Drifter ' + (100 + Math.floor(Math.random() * 900)); } catch (e) { $('riderName').value = 'Drifter'; }
   Menus.initMenus(menuHooks);
   MP.initMultiplayer({
-    click: () => audio.click(), name: riderName, play: playOnline, started: () => started,
+    click: () => audio.click(), name: riderName, play: playOnline, playPosse, started: () => started, toast: m => toast(m),
+    posse: () => (game && game.net && game.net.link ? game.net : null),
     online: () => (game && game.net && game.net.online ? game.net : null),
     saveAndReload: () => { if (game) { game.save(); if (game.net) game.net.leave(); } saveExplored(); location.reload(); },
     opened: () => { clearKeys(); if (document.pointerLockElement) document.exitPointerLock(); },
@@ -256,7 +258,7 @@ const menuHooks = {
   quit: () => quitGame(),
   backToMain: () => renderHelp(),
   multiplayer: () => !alone(),
-  online: () => !!(game && game.net && game.net.online),
+  online: () => !!(game && game.net && (game.net.online || game.net.link)),
   serverPanel: () => MP.openSession(),
 };
 // the intro card doubles as the main menu once you are riding
@@ -288,6 +290,11 @@ function startGame(makeNet) {
     .catch(e => { $('start').disabled = false; throw e; });
 }
 $('start').addEventListener('click', () => { startGame(); });
+// a posse (posse.js): the same link the tabs use, carried between computers; the host's browser keeps the world
+function playPosse(link) {
+  link.onlost = msg => { if (document.pointerLockElement) document.exitPointerLock(); MP.disconnected(msg); };
+  return startGame(o => new Net(Object.assign(o, { link, role: link.role })));
+}
 // a server session: the server's difficulty for its world while you're in it, and its news as toasts
 function playOnline(room) {
   return startGame(o => {
